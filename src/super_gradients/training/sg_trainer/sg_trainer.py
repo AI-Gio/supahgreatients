@@ -3,7 +3,7 @@ import inspect
 import os
 from copy import deepcopy
 from pathlib import Path
-from typing import Union, Tuple, Mapping, Dict, Any, List, Optional
+from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
 
 import hydra
 import numpy as np
@@ -13,92 +13,89 @@ import torch.nn
 import torchmetrics
 from omegaconf import DictConfig, OmegaConf
 from piptools.scripts.sync import _get_installed_distributions
-from torch import nn
-from torch.cuda.amp import GradScaler, autocast
-from torch.utils.data import DataLoader, SequentialSampler
-from torch.utils.data.distributed import DistributedSampler
-from torchmetrics import MetricCollection, Metric
-from tqdm import tqdm
-
 from super_gradients import is_distributed
-from super_gradients.common.environment.checkpoints_dir_utils import get_checkpoints_dir_path, get_ckpt_local_path
-from super_gradients.module_interfaces import HasPreprocessingParams, HasPredict
-from super_gradients.modules.repvgg_block import fuse_repvgg_blocks_residual_branches
-
-from super_gradients.training.utils.sg_trainer_utils import get_callable_param_names
 from super_gradients.common.abstractions.abstract_logger import get_logger
-from super_gradients.common.sg_loggers.abstract_sg_logger import AbstractSGLogger
-from super_gradients.common.sg_loggers.base_sg_logger import BaseSGLogger
-from super_gradients.common.data_types.enum import MultiGPUMode, StrictLoad, EvaluationType
+from super_gradients.common.data_types.enum import (EvaluationType,
+                                                    MultiGPUMode, StrictLoad)
 from super_gradients.common.decorators.factory_decorator import resolve_param
+from super_gradients.common.environment.cfg_utils import (add_params_to_cfg,
+                                                          load_experiment_cfg,
+                                                          load_recipe)
+from super_gradients.common.environment.checkpoints_dir_utils import (
+    get_checkpoints_dir_path, get_ckpt_local_path)
+from super_gradients.common.environment.device_utils import device_config
 from super_gradients.common.factories.callbacks_factory import CallbacksFactory
 from super_gradients.common.factories.list_factory import ListFactory
 from super_gradients.common.factories.losses_factory import LossesFactory
 from super_gradients.common.factories.metrics_factory import MetricsFactory
-
-from super_gradients.training import utils as core_utils, models, dataloaders
+from super_gradients.common.factories.pre_launch_callbacks_factory import \
+    PreLaunchCallbacksFactory
+from super_gradients.common.registry.registry import (ARCHITECTURES,
+                                                      LR_SCHEDULERS_CLS_DICT,
+                                                      LR_WARMUP_CLS_DICT,
+                                                      SG_LOGGERS)
+from super_gradients.common.sg_loggers.abstract_sg_logger import \
+    AbstractSGLogger
+from super_gradients.common.sg_loggers.base_sg_logger import BaseSGLogger
+from super_gradients.module_interfaces import (HasPredict,
+                                               HasPreprocessingParams)
+from super_gradients.modules.repvgg_block import \
+    fuse_repvgg_blocks_residual_branches
+from super_gradients.training import dataloaders, models
+from super_gradients.training import utils as core_utils
+from super_gradients.training.datasets.datasets_utils import \
+    DatasetStatisticsTensorboardLogger
 from super_gradients.training.datasets.samplers import RepeatAugSampler
-from super_gradients.training.exceptions.sg_trainer_exceptions import UnsupportedOptimizerFormat
+from super_gradients.training.exceptions.sg_trainer_exceptions import \
+    UnsupportedOptimizerFormat
+from super_gradients.training.metrics import Accuracy, Top5
 from super_gradients.training.metrics.metric_utils import (
-    get_metrics_titles,
-    get_metrics_results_tuple,
-    get_logging_values,
-    get_metrics_dict,
-    get_train_loop_description_dict,
-)
+    get_logging_values, get_metrics_dict, get_metrics_results_tuple,
+    get_metrics_titles, get_train_loop_description_dict)
 from super_gradients.training.models import SgModule, get_model_name
-from super_gradients.common.registry.registry import ARCHITECTURES, SG_LOGGERS
+from super_gradients.training.params import TrainingParams
 from super_gradients.training.pretrained_models import PRETRAINED_NUM_CLASSES
-from super_gradients.training.utils import sg_trainer_utils, get_param, torch_version_is_greater_or_equal
+from super_gradients.training.utils import (HpmStruct, get_param, random_seed,
+                                            sg_trainer_utils,
+                                            torch_version_is_greater_or_equal)
+from super_gradients.training.utils.callbacks import (CallbackHandler,
+                                                      ContextSgMethods,
+                                                      LRCallbackBase,
+                                                      MetricsUpdateCallback,
+                                                      Phase, PhaseContext)
+from super_gradients.training.utils.checkpoint_utils import (
+    load_checkpoint_to_model, load_pretrained_weights, read_ckpt_state_dict)
 from super_gradients.training.utils.distributed_training_utils import (
-    MultiGPUModeAutocastWrapper,
-    reduce_results_tuple_for_ddp,
-    compute_precise_bn_stats,
-    setup_device,
-    get_gpu_mem_utilization,
-    get_world_size,
-    get_local_rank,
-    require_ddp_setup,
-    get_device_ids,
-    is_ddp_subprocess,
-    wait_for_the_master,
-    DDPNotSetupException,
-)
+    DDPNotSetupException, MultiGPUModeAutocastWrapper,
+    compute_precise_bn_stats, get_device_ids, get_gpu_mem_utilization,
+    get_local_rank, get_world_size, is_ddp_subprocess,
+    reduce_results_tuple_for_ddp, require_ddp_setup, setup_device,
+    wait_for_the_master)
 from super_gradients.training.utils.ema import ModelEMA
 from super_gradients.training.utils.optimizer_utils import build_optimizer
-from super_gradients.training.utils.sg_trainer_utils import MonitoredValue, log_main_training_params
-from super_gradients.training.utils.utils import fuzzy_idx_in_list, unwrap_model
-from super_gradients.training.utils.weight_averaging_utils import ModelWeightAveraging
-from super_gradients.training.metrics import Accuracy, Top5
-from super_gradients.training.utils import random_seed
-from super_gradients.training.utils.checkpoint_utils import (
-    read_ckpt_state_dict,
-    load_checkpoint_to_model,
-    load_pretrained_weights,
-)
-from super_gradients.training.datasets.datasets_utils import DatasetStatisticsTensorboardLogger
-from super_gradients.training.utils.callbacks import (
-    CallbackHandler,
-    Phase,
-    PhaseContext,
-    MetricsUpdateCallback,
-    ContextSgMethods,
-    LRCallbackBase,
-)
-from super_gradients.common.registry.registry import LR_SCHEDULERS_CLS_DICT, LR_WARMUP_CLS_DICT
-from super_gradients.common.environment.device_utils import device_config
-from super_gradients.training.utils import HpmStruct
-from super_gradients.common.environment.cfg_utils import load_experiment_cfg, add_params_to_cfg, load_recipe
-from super_gradients.common.factories.pre_launch_callbacks_factory import PreLaunchCallbacksFactory
-from super_gradients.training.params import TrainingParams
+from super_gradients.training.utils.sg_trainer_utils import (
+    MonitoredValue, get_callable_param_names, log_main_training_params)
+from super_gradients.training.utils.utils import (fuzzy_idx_in_list,
+                                                  unwrap_model)
+from super_gradients.training.utils.weight_averaging_utils import \
+    ModelWeightAveraging
+from torch import nn
+from torch.cuda.amp import GradScaler, autocast
+from torch.utils.data import DataLoader, SequentialSampler
+from torch.utils.data.distributed import DistributedSampler
+from torchmetrics import Metric, MetricCollection
+from tqdm import tqdm
 
 logger = get_logger(__name__)
 
 
 try:
-    from super_gradients.training.utils.quantization.calibrator import QuantizationCalibrator
-    from super_gradients.training.utils.quantization.export import export_quantized_module_to_onnx
-    from super_gradients.training.utils.quantization.selective_quantization_utils import SelectiveQuantizer
+    from super_gradients.training.utils.quantization.calibrator import \
+        QuantizationCalibrator
+    from super_gradients.training.utils.quantization.export import \
+        export_quantized_module_to_onnx
+    from super_gradients.training.utils.quantization.selective_quantization_utils import \
+        SelectiveQuantizer
 
     _imported_pytorch_quantization_failure = None
 
@@ -1691,7 +1688,7 @@ class Trainer:
         if additional_configs_to_log is not None:
             hyper_param_config["additional_configs_to_log"] = additional_configs_to_log
         self.sg_logger.add_config("hyper_params", hyper_param_config)
-        self.sg_logger.flush()
+        # self.sg_logger.flush()
 
     def _get_hyper_param_config(self):
         """
