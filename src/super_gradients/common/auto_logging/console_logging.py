@@ -36,12 +36,12 @@ class BufferWriter:
 
     def flush(self, force: bool = False):
         """Write the buffer on disk if relevant."""
-        if force or self._require_flush():
-            with self.lock:
-                os.makedirs(os.path.dirname(self.filename), exist_ok=True)
-                with open(self.filename, "a", encoding="utf-8") as f:
-                    f.write(self.buffer.getvalue())
-                    self.buffer.truncate(0)
+        # if force or self._require_flush():
+            # with self.lock:
+                # os.makedirs(os.path.dirname(self.filename), exist_ok=True)
+                # with open(self.filename, "a", encoding="utf-8") as f:
+                #     f.write(self.buffer.getvalue())
+                #     self.buffer.truncate(0)
                     # self.buffer.seek(0)
 
     def _require_flush(self) -> bool:
