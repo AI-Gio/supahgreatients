@@ -1,12 +1,13 @@
+import atexit
 import os
 import sys
 from datetime import datetime
-from pathlib import Path
 from io import StringIO
-import atexit
+from pathlib import Path
 from threading import Lock
 
-from super_gradients.common.environment.ddp_utils import multi_process_safe, is_main_process
+from super_gradients.common.environment.ddp_utils import (is_main_process,
+                                                          multi_process_safe)
 
 
 class BufferWriter:
@@ -41,7 +42,7 @@ class BufferWriter:
                 with open(self.filename, "a", encoding="utf-8") as f:
                     f.write(self.buffer.getvalue())
                     self.buffer.truncate(0)
-                    self.buffer.seek(0)
+                    # self.buffer.seek(0)
 
     def _require_flush(self) -> bool:
         """Indicate if a buffer is needed (i.e. if buffer size above threshold)"""
