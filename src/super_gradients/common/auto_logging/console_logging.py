@@ -31,8 +31,8 @@ class BufferWriter:
         """Write to buffer (not on disk)."""
         with self.lock:
             self.buffer.write(data)
-        if self._require_flush():
-            self.flush()
+        # if self._require_flush():
+        #     # self.flush()
 
     def flush(self, force: bool = False):
         """Write the buffer on disk if relevant."""
@@ -140,7 +140,7 @@ class ConsoleSink:
     @multi_process_safe
     def _set_location(self, filename: str):
         """Copy and redirect the sink file into another location."""
-        self._flush()
+        # self._flush()
 
         prev_filename = self.filename
         copy_file(src_filename=prev_filename, dest_filename=filename, copy_mode="a")
@@ -158,13 +158,13 @@ class ConsoleSink:
     @multi_process_safe
     def _flush(self):
         """Force the flush on stdout and stderr."""
-        self.stdout.flush(force=True)
-        self.stderr.flush(force=True)
+        # self.stdout.flush(force=True)
+        # self.stderr.flush(force=True)
 
     @staticmethod
     def flush():
         """Force the flush on stdout and stderr."""
-        _console_sink._flush()
+        # _console_sink._flush()
 
     @staticmethod
     def get_filename():

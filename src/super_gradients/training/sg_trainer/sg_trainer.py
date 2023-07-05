@@ -1070,8 +1070,8 @@ class Trainer:
         self.net = model
 
         self._prep_net_for_train()
-        if not self.ddp_silent_mode:
-            self._initialize_sg_logger_objects(additional_configs_to_log)
+        # if not self.ddp_silent_mode:
+        #     self._initialize_sg_logger_objects(additional_configs_to_log)
         self._load_checkpoint_to_model()
 
         # SET RANDOM SEED

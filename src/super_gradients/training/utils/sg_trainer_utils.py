@@ -1,28 +1,24 @@
+import inspect
 import os
-import sys
+import random
 import socket
+import sys
 import time
 from dataclasses import dataclass
+from enum import Enum
 from multiprocessing import Process
 from pathlib import Path
-from typing import Tuple, Union, Dict, Sequence, Callable
-import random
+from typing import Callable, Dict, Sequence, Tuple, Union
 
-import inspect
-
-from super_gradients.common.abstractions.abstract_logger import get_logger
-from treelib import Tree
-from termcolor import colored
 import torch
-
-from torch.utils.tensorboard import SummaryWriter
-
-from super_gradients.common.environment.device_utils import device_config
-from super_gradients.training.exceptions.dataset_exceptions import UnsupportedBatchItemsFormat
+from super_gradients.common.abstractions.abstract_logger import get_logger
 from super_gradients.common.data_types.enum import MultiGPUMode
-
-
-from enum import Enum
+from super_gradients.common.environment.device_utils import device_config
+from super_gradients.training.exceptions.dataset_exceptions import \
+    UnsupportedBatchItemsFormat
+from termcolor import colored
+from torch.utils.tensorboard import SummaryWriter
+from treelib import Tree
 
 
 class IncreaseType(Enum):
@@ -359,7 +355,8 @@ def write_training_results(writer, results_titles_list, results_values_list, epo
         # USE ONLY LOWER-CASE LETTERS AND REPLACE SPACES WITH '_' TO AVOID MANY TITLES FOR THE SAME KEY
         corrected_res_key = res_key.lower().replace(" ", "_")
         writer.add_scalar(corrected_res_key, res_val, epoch)
-    writer.flush()
+    # writer.flush()
+
 
 
 def write_hpms(writer, hpmstructs=[], special_conf={}):
@@ -371,7 +368,7 @@ def write_hpms(writer, hpmstructs=[], special_conf={}):
     for key, val in special_conf.items():
         hpm_string += "{}: {}  \n  ".format(key, val)
     writer.add_text("Hyper_parameters", hpm_string)
-    writer.flush()
+    # writer.flush()
 
 
 # TODO: This should probably move into datasets/datasets_utils.py?
